@@ -1,20 +1,24 @@
-"""Copy the entry image to the grader's output directory.
+#!/usr/bin/env python3
+"""Copy the generated front page into the grader's output folder.
 
-Standard library only: this program runs with no network and nothing
-installed, so it just copies entry.png (which ships in this repository)
-to /output/entry.png. The image itself is drawn by gen_image.py.
+Standard library only: nothing to install, nothing to import beyond
+shutil and os. The entry image lives next to this file; the grader
+reads it from /output/entry.png.
 """
+
 import os
 import shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
+SOURCE = os.path.join(HERE, "entry.png")
+OUT_DIR = "/output"
+TARGET = os.path.join(OUT_DIR, "entry.png")
 
 
 def main():
-    os.makedirs(OUT, exist_ok=True)
-    shutil.copyfile(os.path.join(HERE, "entry.png"),
-                    os.path.join(OUT, "entry.png"))
+    os.makedirs(OUT_DIR, exist_ok=True)
+    shutil.copyfile(SOURCE, TARGET)
+    print("Wrote", TARGET)
 
 
 if __name__ == "__main__":

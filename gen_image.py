@@ -1,222 +1,276 @@
-"""Generate entry.png: a newspaper front page summing up 23 Nov 2026.
+#!/usr/bin/env python3
+"""Draw the 23 November 2026 news front page (1024x1024 PNG).
 
-Run: python3 gen_image.py  -> writes entry.png (1024x1024, PNG, <1 MiB)
-Facts used (as reported on 23 Nov 2026 by BBC/Reuters/AFP and wire services):
- 1. Rescuers in Dymer, Ukraine, pulled 7-year-old David alive from the
-    rubble of an apartment block 14 hours after a Russian drone strike;
-    at least 10 people were killed.
- 2. The AI stock sell-off spread across Asia: Japan's Nikkei fell 5.06%,
-    South Korea and Hong Kong slid again on Monday; gold rose about 2.7%
-    as investors sought safety.
- 3. Belgian air-traffic control provider Skeyes suspended services from
-    07:00 to 21:00 in a nationwide strike; 429 flights cancelled and
-    about 60,000 passengers affected.
- 4. South Korean customs data released on Monday put 2026 exports at
-    $1.0076 trillion, a first for the country, driven by AI-chip demand.
-Also: Marc Marquez took his eighth MotoGP title at Portimao, level with
-Giacomo Agostini; Liverpool beat Manchester United 4-0 in Mauricio
-Pochettino's first game as United manager; Houthis claimed a strike on
-Saudi Arabia's Rabigh refinery while a Saudi strike on Hodeida killed at
-least four; the search resumed at the Cikande candy factory fire, with
-24 body bags removed and 29 workers still missing.
+Everything here is drawn with plain PIL shapes and text; no external
+assets, no network, no clock, no randomness, so repeated runs produce
+the exact same file.
 """
-import math
-import textwrap
+
 from PIL import Image, ImageDraw, ImageFont
 
-W = H = 1024
-PAPER = (247, 243, 232)
-INK = (20, 20, 20)
-RED = (185, 28, 28)
-BLUE = (29, 78, 216)
-TEAL = (14, 124, 123)
-GREY = (90, 90, 90)
-LIGHT = (255, 255, 255)
-GOLD = (212, 160, 40)
-SKY = (178, 216, 240)
+CANVAS_W = 1024
+CANVAS_H = 1024
+MARGIN = 36
+GAP = 16
+PANEL_W = 468
+PANEL_H = 322
 
-BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+PAPER = (246, 240, 225)
+INK = (22, 22, 22)
+SOFT = (74, 74, 74)
+RULE_RED = (176, 32, 32)
+GOLD = (214, 164, 32)
 
-
-def font(path, size):
-    return ImageFont.truetype(path, size)
+BOLD_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+PLAIN_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 
-def wrap(draw, text, fnt, width):
+def font(size, bold=True):
+    return ImageFont.truetype(BOLD_PATH if bold else PLAIN_PATH, size)
+
+
+def split_lines(draw, text, fnt, max_width):
+    """Greedy word wrap using the font's real pixel widths."""
     words = text.split()
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=fnt) <= width:
-            cur = trial
+    lines = []
+    current = ""
+    for word in words:
+        trial = word if not current else current + " " + word
+        if draw.textlength(trial, font=fnt) <= max_width:
+            current = trial
         else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
     return lines
 
 
-def panel(draw, x, y, w, h, kicker, kcolor, headline, summary, art):
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=10, outline=INK, width=3, fill=LIGHT)
-    draw.rounded_rectangle([x, y, x + w, y + 34], radius=10, fill=kcolor)
-    draw.rectangle([x, y + 20, x + w, y + 34], fill=kcolor)
-    draw.text((x + 14, y + 7), kicker, font=font(BOLD, 19), fill=LIGHT)
-    art(draw, x + 14, y + 48, w - 28, 118)
-    ty = y + 178
-    for line in wrap(draw, headline, font(BOLD, 26), w - 28):
-        draw.text((x + 14, ty), line, font=font(BOLD, 26), fill=INK)
-        ty += 32
-    ty += 4
-    for line in wrap(draw, summary, font(REG, 19), w - 28):
-        draw.text((x + 14, ty), line, font=font(REG, 19), fill=(60, 60, 60))
-        ty += 25
+def centred(draw, cx, y, text, fnt, fill):
+    w = draw.textlength(text, font=fnt)
+    draw.text((cx - w / 2, y), text, font=fnt, fill=fill)
 
 
-def art_rubble(draw, x, y, w, h):
-    # collapsed apartment block, rubble mound, rescuer lifting a child
-    draw.rectangle([x, y, x + w, y + h], fill=(226, 222, 210))
-    # standing half of the block
-    draw.rectangle([x + 20, y + 10, x + 150, y + h - 30], fill=(150, 148, 140), outline=INK, width=3)
-    for r in range(3):
-        for c in range(3):
-            draw.rectangle([x + 32 + c * 38, y + 22 + r * 30, x + 58 + c * 38, y + 42 + r * 30],
-                           fill=(90, 90, 90))
-    # broken edge of the collapsed half
-    draw.polygon([(x + 150, y + 10), (x + 210, y + 55), (x + 150, y + h - 30)], fill=(120, 118, 110))
+# ---------------------------------------------------------------- art panels
+
+def art_rubble(d, x, y, w, h):
+    """Collapsed apartment block with a rescuer on the mound."""
+    d.rectangle([x, y, x + w, y + h], fill=(233, 228, 216))
+    # leaning block, left side
+    d.polygon([(x + 18, y + 22), (x + 178, y + 22), (x + 168, y + 128),
+               (x + 8, y + 128)], fill=(122, 122, 118))
+    for row in range(3):
+        for col in range(3):
+            wx = x + 34 + col * 44
+            wy = y + 36 + row * 34
+            d.rectangle([wx, wy, wx + 26, wy + 20], fill=(52, 52, 52))
     # rubble mound
-    draw.polygon([(x + 150, y + h), (x + 220, y + 60), (x + 300, y + 80), (x + 380, y + 55),
-                  (x + 440, y + h)], fill=(170, 165, 150), outline=INK, width=2)
-    draw.rectangle([x + 250, y + 78, x + 290, y + 96], fill=(120, 118, 110), outline=INK)
-    draw.rectangle([x + 320, y + 72, x + 355, y + 92], fill=(140, 135, 125), outline=INK)
-    # rescuer in orange helmet and vest, lifting a small figure
-    draw.ellipse([x + 380, y + 28, x + 404, y + 50], fill=(255, 200, 140), outline=INK, width=2)
-    draw.polygon([(x + 378, y + 32), (x + 406, y + 32), (x + 392, y + 20)], fill=(230, 120, 20), outline=INK)
-    draw.rectangle([x + 378, y + 52, x + 406, y + 86], fill=(230, 120, 20), outline=INK, width=2)
-    draw.rectangle([x + 372, y + 54, x + 380, y + 84], fill=(255, 200, 140), outline=INK)
-    draw.rectangle([x + 404, y + 54, x + 412, y + 84], fill=(255, 200, 140), outline=INK)
-    # child being carried, wrapped in a blanket
-    draw.ellipse([x + 414, y + 58, x + 428, y + 70], fill=(255, 200, 140), outline=INK, width=2)
-    draw.rectangle([x + 410, y + 70, x + 432, y + 92], fill=(60, 120, 200), outline=INK, width=2)
+    d.polygon([(x + 120, y + h), (x + 230, y + 62), (x + 330, y + 96),
+               (x + w - 8, y + h)], fill=(152, 148, 138))
+    d.polygon([(x + 250, y + 96), (x + 300, y + 76), (x + 350, y + 96)],
+              fill=(132, 128, 118))
+    d.rectangle([x + 262, y + 104, x + 296, y + 122], fill=(96, 96, 92))
+    d.rectangle([x + 318, y + 110, x + 348, y + 126], fill=(96, 96, 92))
     # dust puffs
-    for cx, cy, r in [(x + 240, y + 40, 8), (x + 270, y + 30, 6), (x + 300, y + 45, 7)]:
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(200, 195, 180))
+    for cx, cy, r in [(x + 240, y + 40, 7), (x + 268, y + 30, 5),
+                      (x + 300, y + 46, 6)]:
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(206, 200, 188))
+    # rescuer, orange helmet and vest
+    d.ellipse([x + 372, y + 34, x + 396, y + 58], fill=(232, 146, 44))
+    d.rectangle([x + 370, y + 58, x + 398, y + 66], fill=(232, 146, 44))
+    d.rectangle([x + 372, y + 66, x + 396, y + 104], fill=(226, 106, 44))
+    d.rectangle([x + 372, y + 104, x + 382, y + 128], fill=(48, 48, 48))
+    d.rectangle([x + 386, y + 104, x + 396, y + 128], fill=(48, 48, 48))
+    # small child figure beside the rescuer
+    d.ellipse([x + 402, y + 66, x + 418, y + 82], fill=(240, 196, 150))
+    d.rectangle([x + 402, y + 82, x + 418, y + 112], fill=(52, 96, 178))
+    d.rectangle([x + 404, y + 112, x + 412, y + 128], fill=(48, 48, 48))
+    d.rectangle([x + 412, y + 112, x + 418, y + 128], fill=(48, 48, 48))
 
 
-def art_chart(draw, x, y, w, h):
-    # red falling market line, gold bar, big -5.06%
-    draw.rectangle([x, y, x + w, y + h], fill=(240, 244, 250))
-    for i in range(5):
-        yy = y + 18 + i * 20
-        draw.line([x + 10, yy, x + w - 10, yy], fill=(220, 225, 232), width=1)
-    pts = [(x + 20, y + 18), (x + 110, y + 30), (x + 190, y + 26),
-           (x + 270, y + 62), (x + 350, y + 78), (x + 420, y + 108)]
-    draw.line(pts, fill=RED, width=6, joint="curve")
-    draw.polygon([(x + 420, y + 108), (x + 404, y + 96), (x + 404, y + 112)], fill=RED)
-    draw.text((x + 16, y + 66), "-5.06%", font=font(BOLD, 34), fill=RED)
-    # gold bar rising in the corner
-    draw.polygon([(x + 330, y + 100), (x + 360, y + 82), (x + 410, y + 82),
-                  (x + 440, y + 100)], fill=GOLD, outline=INK, width=2)
-    draw.rectangle([x + 330, y + 100, x + 440, y + 112], fill=(180, 135, 25), outline=INK, width=2)
-    draw.text((x + 300, y + 6), "+2.7% GOLD", font=font(BOLD, 18), fill=(150, 110, 10))
+def art_chart(d, x, y, w, h):
+    """Falling market line with a gold safe-haven note."""
+    d.rectangle([x, y, x + w, y + h], fill=(233, 239, 248))
+    for gy in range(1, 4):
+        yy = y + gy * h // 4
+        d.line([(x + 8, yy), (x + w - 8, yy)], fill=(210, 218, 232), width=1)
+    pts = [(x + 16, y + 26), (x + 90, y + 40), (x + 170, y + 34),
+           (x + 250, y + 38), (x + 330, y + 78), (x + 400, y + 104),
+           (x + w - 16, y + 118)]
+    d.line(pts, fill=(176, 32, 32), width=5, joint="curve")
+    for px, py in pts:
+        d.ellipse([px - 4, py - 4, px + 4, py + 4], fill=(176, 32, 32))
+    d.text((x + 18, y + 78), "-5.06%", font=font(36), fill=(176, 32, 32))
+    d.text((x + w - 168, y + 16), "+2.7% GOLD", font=font(21),
+           fill=(158, 116, 10))
+    # gold bars, bottom right
+    for i, bh in enumerate((16, 26, 38)):
+        bx = x + w - 118 + i * 38
+        d.rectangle([bx, y + h - 12 - bh, bx + 30, y + h - 12],
+                    fill=(214, 164, 32), outline=(150, 108, 8))
 
 
-def art_airport(draw, x, y, w, h):
-    # control tower, grounded plane, cancelled departures board
-    draw.rectangle([x, y, x + w, y + h], fill=SKY)
-    draw.rectangle([x, y + 92, x + w, y + h], fill=(150, 150, 150))
-    draw.line([x, y + 92, x + w, y + 92], fill=INK, width=3)
+def art_airport(d, x, y, w, h):
+    """Grounded plane under a control tower, flights cancelled."""
+    d.rectangle([x, y, x + w, y + h], fill=(186, 218, 240))
+    d.rectangle([x, y + h - 34, x + w, y + h], fill=(128, 128, 126))
+    d.line([(x, y + h - 34), (x + w, y + h - 34)], fill=(90, 90, 88),
+           width=3)
     # control tower
-    draw.rectangle([x + 30, y + 20, x + 58, y + 92], fill=(200, 200, 200), outline=INK, width=3)
-    draw.polygon([(x + 18, y + 24), (x + 70, y + 24), (x + 62, y + 2), (x + 26, y + 2)],
-                 fill=(90, 160, 220), outline=INK, width=3)
-    draw.line([x + 44, y + 2, x + 44, y - 8], fill=INK, width=3)
-    # grounded plane, nose to the right
-    draw.ellipse([x + 130, y + 62, x + 330, y + 88], fill=LIGHT, outline=INK, width=3)
-    draw.polygon([(x + 330, y + 66), (x + 380, y + 74), (x + 330, y + 84)], fill=LIGHT, outline=INK, width=3)
-    # tail fin at the rear, swept wings
-    draw.polygon([(x + 138, y + 64), (x + 152, y + 38), (x + 164, y + 64)], fill=LIGHT, outline=INK, width=3)
-    draw.polygon([(x + 200, y + 64), (x + 238, y + 42), (x + 254, y + 64)], fill=LIGHT, outline=INK, width=3)
-    draw.polygon([(x + 200, y + 86), (x + 238, y + 106), (x + 254, y + 86)], fill=LIGHT, outline=INK, width=3)
-    for wx in (x + 170, x + 210, x + 250, x + 290):
-        draw.ellipse([wx, y + 68, wx + 12, y + 80], fill=BLUE)
-    # departures board, wide enough for its text
-    draw.rectangle([x + 280, y + 6, x + w - 8, y + 50], fill=INK)
-    draw.text((x + 290, y + 10), "CANCELLED", font=font(BOLD, 18), fill=(255, 80, 80))
-    draw.text((x + 290, y + 32), "429 FLIGHTS", font=font(BOLD, 13), fill=LIGHT)
+    d.rectangle([x + 34, y + 48, x + 52, y + h - 34], fill=(150, 150, 148))
+    d.rectangle([x + 22, y + 26, x + 64, y + 50], fill=(52, 96, 178))
+    d.rectangle([x + 22, y + 26, x + 64, y + 34], fill=(120, 200, 240))
+    # plane fuselage
+    d.polygon([(x + 96, y + 92), (x + 330, y + 92), (x + 372, y + 104),
+               (x + 330, y + 116), (x + 96, y + 116)], fill=(244, 244, 244),
+              outline=(60, 60, 60))
+    d.polygon([(x + 150, y + 92), (x + 176, y + 62), (x + 196, y + 92)],
+              fill=(244, 244, 244), outline=(60, 60, 60))
+    d.polygon([(x + 300, y + 92), (x + 322, y + 66), (x + 336, y + 92)],
+              fill=(244, 244, 244), outline=(60, 60, 60))
+    d.polygon([(x + 96, y + 104), (x + 70, y + 92), (x + 70, y + 116)],
+              fill=(244, 244, 244), outline=(60, 60, 60))
+    for wx in (150, 200, 250, 300):
+        d.ellipse([x + wx, y + 98, x + wx + 12, y + 110],
+                  fill=(52, 96, 178))
+    # cancelled box
+    d.rectangle([x + w - 178, y + 12, x + w - 12, y + 62], fill=(10, 10, 10))
+    d.text((x + w - 168, y + 16), "CANCELLED", font=font(19),
+           fill=(232, 52, 52))
+    d.text((x + w - 168, y + 38), "429 FLIGHTS", font=font(16),
+           fill=(255, 255, 255))
 
 
-def art_ship(draw, x, y, w, h):
-    # container ship carrying chips, big $1T figure
-    draw.rectangle([x, y, x + w, y + h], fill=SKY)
-    draw.rectangle([x, y + 84, x + w, y + h], fill=(60, 120, 180))
-    for i in range(4):
-        yy = y + 92 + i * 8
-        draw.arc([x - 10 + i * 26, yy, x + 110 + i * 26, yy + 12], 0, 180, fill=LIGHT, width=3)
+def art_ship(d, x, y, w, h):
+    """Container ship carrying the trillion-dollar export story."""
+    # banner strip across the top keeps the label clear of the cargo
+    d.rectangle([x, y, x + w, y + h], fill=(188, 220, 240))
+    d.rectangle([x, y, x + w, y + 34], fill=(255, 255, 255))
+    d.rectangle([x + 10, y + 4, x + 38, y + 30], fill=(14, 14, 14))
+    d.text((x + 16, y + 9), "AI", font=font(18), fill=(255, 255, 255))
+    d.text((x + 48, y + 7), "$1 TRILLION", font=font(24), fill=INK)
+    sea_top = y + h - 30
+    d.rectangle([x, sea_top, x + w, y + h], fill=(52, 128, 196))
+    for wx in (20, 120, 220, 320):
+        d.arc([x + wx, sea_top + 8, x + wx + 60, sea_top + 22],
+              start=200, end=340, fill=(255, 255, 255), width=2)
     # hull
-    draw.polygon([(x + 30, y + 80), (x + 420, y + 80), (x + 390, y + 104), (x + 60, y + 104)],
-                 fill=(40, 40, 40), outline=INK, width=3)
-    # containers, stacked below the headline figure
-    cols = [RED, BLUE, TEAL, GOLD, (40, 120, 60)]
+    d.polygon([(x + 24, sea_top - 26), (x + w - 24, sea_top - 26),
+               (x + w - 52, sea_top + 12), (x + 52, sea_top + 12)],
+              fill=(30, 30, 34))
+    # container stacks
+    palette = [(176, 32, 32), (36, 86, 178), (16, 122, 110),
+               (214, 164, 32), (46, 128, 60)]
     for row in range(2):
-        for c in range(5):
-            cx = x + 60 + c * 68
-            cy = y + 36 + row * 22
-            draw.rectangle([cx, cy, cx + 62, cy + 20], fill=cols[(c + row) % 5], outline=INK, width=2)
-    # bridge
-    draw.rectangle([x + 380, y + 40, x + 410, y + 80], fill=LIGHT, outline=INK, width=3)
-    draw.rectangle([x + 384, y + 46, x + 406, y + 58], fill=BLUE)
-    # chip
-    draw.rectangle([x + 14, y + 8, x + 52, y + 46], fill=INK)
-    for px in (x + 22, x + 30, x + 38):
-        draw.line([px, y + 2, px, y + 8], fill=INK, width=2)
-        draw.line([px, y + 46, px, y + 52], fill=INK, width=2)
-    draw.text((x + 20, y + 16), "AI", font=font(BOLD, 20), fill=GOLD)
-    draw.text((x + 60, y + 4), "$1 TRILLION", font=font(BOLD, 28), fill=INK)
+        for col in range(5):
+            cx = x + 52 + col * 76
+            cy = sea_top - 26 - (row + 1) * 26
+            d.rectangle([cx, cy, cx + 70, cy + 22],
+                        fill=palette[(row * 5 + col) % len(palette)],
+                        outline=(20, 20, 20))
 
 
-def main():
-    img = Image.new("RGB", (W, H), PAPER)
+# ------------------------------------------------------------------ panels
+
+STORIES = [
+    {
+        "tag": "DYMER  •  UKRAINE",
+        "bar": (176, 32, 32),
+        "art": art_rubble,
+        "headline": "Boy, 7, pulled alive after 14 hours in rubble",
+        "caption": ("Rescuers freed David from the rubble; at least 10 "
+                    "died in the drone strike."),
+    },
+    {
+        "tag": "TOKYO  •  MARKETS",
+        "bar": (30, 80, 180),
+        "art": art_chart,
+        "headline": "AI sell-off rattles Asia's markets",
+        "caption": ("Nikkei -5.06%, Korea and Hong Kong down again; gold "
+                    "+2.7% as investors seek safety."),
+    },
+    {
+        "tag": "BRUSSELS  •  EUROPE",
+        "bar": (14, 122, 110),
+        "art": art_airport,
+        "headline": "Belgium's airports shut down by strike",
+        "caption": ("Air traffic control halted 7am-9pm; 429 flights "
+                    "cancelled, 60,000 passengers hit."),
+    },
+    {
+        "tag": "SEOUL  •  TRADE",
+        "bar": (176, 32, 32),
+        "art": art_ship,
+        "headline": "South Korea passes $1 trillion in exports",
+        "caption": ("Monday customs data put exports at $1.0076 trillion, "
+                    "a first, driven by AI chips."),
+    },
+]
+
+ALSO_TODAY = [
+    ("Marquez takes eighth MotoGP title at Portim\u00e3o, level with "
+     "Agostini  \u2022  Liverpool thrash Man Utd 4-0"),
+    ("Houthis claim a strike on Saudi Arabia's Rabigh refinery; Saudi "
+     "strike on Hodeida kills at least 4"),
+    ("Search resumes at the Cikande candy factory fire; 24 body bags, "
+     "29 workers still missing"),
+]
+
+
+def draw_story(draw, story, x, y):
+    draw.rectangle([x, y, x + PANEL_W, y + PANEL_H], fill=(255, 255, 255),
+                   outline=INK, width=2)
+    draw.rectangle([x, y, x + PANEL_W, y + 36], fill=story["bar"])
+    draw.text((x + 14, y + 7), story["tag"], font=font(20), fill=(255, 255, 255))
+    story["art"](draw, x + 10, y + 46, PANEL_W - 20, 144)
+    head_f = font(28)
+    lines = split_lines(draw, story["headline"], head_f, PANEL_W - 28)
+    hy = y + 200
+    for line in lines:
+        draw.text((x + 14, hy), line, font=head_f, fill=INK)
+        hy += 30
+    cap_f = font(20, bold=False)
+    for line in split_lines(draw, story["caption"], cap_f, PANEL_W - 28):
+        draw.text((x + 14, hy + 2), line, font=cap_f, fill=SOFT)
+        hy += 22
+
+
+def build_page():
+    img = Image.new("RGB", (CANVAS_W, CANVAS_H), PAPER)
     d = ImageDraw.Draw(img)
-    # masthead
-    d.text((512, 18), "THE WORLD IN ONE DAY", font=font(BOLD, 58), fill=INK, anchor="ma")
-    d.text((512, 88), "MONDAY, 23 NOVEMBER 2026", font=font(BOLD, 38), fill=RED, anchor="ma")
-    d.line([40, 140, 984, 140], fill=INK, width=4)
-    d.text((512, 150), "Four stories that defined the day — as reported", font=font(REG, 22), fill=GREY, anchor="ma")
-    # panels 2x2
-    pw, ph = 462, 330
-    panel(d, 40, 190, pw, ph, "DYMER  •  UKRAINE", RED,
-          "Boy, 7, pulled alive after 14 hours in rubble",
-          "Rescuers freed David from a collapsed apartment block; at least 10 were killed in the drone strike.",
-          art_rubble)
-    panel(d, 522, 190, pw, ph, "TOKYO  •  MARKETS", BLUE,
-          "AI sell-off rattles Asia's markets",
-          "Nikkei -5.06%, Korea and Hong Kong down again; gold +2.7% as investors seek safety.",
-          art_chart)
-    panel(d, 40, 540, pw, ph, "BRUSSELS  •  EUROPE", TEAL,
-          "Belgium's airports shut down by strike",
-          "Skeyes halted air traffic control 7am-9pm; 429 flights cancelled, 60,000 passengers hit.",
-          art_airport)
-    panel(d, 522, 540, pw, ph, "SEOUL  •  TRADE", RED,
-          "South Korea passes $1 trillion in exports",
-          "Monday customs data put 2026 exports at $1.0076 trillion — a first, driven by AI chips.",
-          art_ship)
-    # also strip
-    d.rectangle([40, 886, 984, 972], fill=INK)
-    d.text((512, 890), "ALSO TODAY", font=font(BOLD, 18), fill=(255, 200, 60), anchor="ma")
-    d.text((512, 912), "Marquez takes eighth MotoGP title at Portimao, level with Agostini  •  Liverpool thrash Man Utd 4-0",
-           font=font(REG, 15), fill=LIGHT, anchor="ma")
-    d.text((512, 932), "Houthis claim a strike on Saudi Arabia's Rabigh refinery; Saudi strike on Hodeida kills at least 4",
-           font=font(REG, 15), fill=LIGHT, anchor="ma")
-    d.text((512, 952), "Search resumes at the Cikande candy factory fire; 24 body bags removed, 29 workers still missing",
-           font=font(REG, 15), fill=LIGHT, anchor="ma")
-    d.text((512, 982), "Stories as reported on 23 November 2026  •  BBC  •  Reuters  •  AFP",
-           font=font(REG, 16), fill=GREY, anchor="ma")
-    img.save("entry.png", "PNG", optimize=True)
-    print("saved entry.png")
+
+    centred(d, CANVAS_W // 2, 24, "THE WORLD IN ONE DAY", font(52), INK)
+    centred(d, CANVAS_W // 2, 92, "MONDAY, 23 NOVEMBER 2026", font(38),
+            RULE_RED)
+    d.line([(MARGIN, 148), (CANVAS_W - MARGIN, 148)], fill=INK, width=3)
+    centred(d, CANVAS_W // 2, 158,
+            "Four stories that defined the day \u2014 as reported",
+            font(22, bold=False), SOFT)
+
+    for i, story in enumerate(STORIES):
+        px = MARGIN + (i % 2) * (PANEL_W + GAP)
+        py = 196 + (i // 2) * (PANEL_H + GAP)
+        draw_story(d, story, px, py)
+
+    strip_y = 872
+    d.rectangle([MARGIN, strip_y, CANVAS_W - MARGIN, strip_y + 96],
+                fill=(12, 12, 12))
+    centred(d, CANVAS_W // 2, strip_y + 8, "ALSO TODAY", font(22), GOLD)
+    item_f = font(18, bold=False)
+    iy = strip_y + 36
+    for item in ALSO_TODAY:
+        centred(d, CANVAS_W // 2, iy, item, item_f, (255, 255, 255))
+        iy += 21
+
+    centred(d, CANVAS_W // 2, 980,
+            "Stories as reported on 23 November 2026  \u2022  BBC  \u2022  "
+            "Reuters  \u2022  AFP",
+            font(16, bold=False), SOFT)
+    return img
 
 
 if __name__ == "__main__":
-    main()
+    page = build_page()
+    page.save("entry.png")
+    print("Wrote entry.png", page.size)
